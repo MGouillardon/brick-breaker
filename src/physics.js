@@ -1,6 +1,6 @@
 import {
   WIDTH, HEIGHT, PADDLE_WIDTH, MAX_LEVELS,
-  MAX_LIVES, BONUS_DURATION, SLOW_DURATION, SHRINK_DURATION, STUCK_THRESHOLD,
+  MAX_LIVES, BONUS_DURATION, SLOW_DURATION, SHRINK_DURATION,
   FLASH_MSGS, PEACH_COLOR, GREEN_COLOR,
 } from './constants.js';
 import { effectivePaddleWidth, ballOnPaddleX, getSpeedLevels } from './state.js';
@@ -65,14 +65,9 @@ function stepBall(state, ball) {
   ball.x += ball.vx;
   ball.y += ball.vy;
 
-  let hitWall = false;
-  if (ball.x <= 0)             { ball.x = 0;         ball.vx =  Math.abs(ball.vx); hitWall = true; }
-  else if (ball.x >= WIDTH-1)  { ball.x = WIDTH-1;   ball.vx = -Math.abs(ball.vx); hitWall = true; }
-  if (ball.y <= 0)             { ball.y = 0;          ball.vy =  Math.abs(ball.vy); }
-
-  if (hitWall && state.stuckTicks > STUCK_THRESHOLD) {
-    ball.x = Math.max(1, Math.min(WIDTH - 2, ball.x + 1));
-  }
+  if (ball.x <= 0)            { ball.x = 1;         ball.vx =  Math.abs(ball.vx); }
+  else if (ball.x >= WIDTH-1) { ball.x = WIDTH - 2; ball.vx = -Math.abs(ball.vx); }
+  if (ball.y <= 0)            { ball.y = 1;          ball.vy =  Math.abs(ball.vy); }
 
   const bx = Math.round(ball.x);
   const by = Math.round(ball.y);
