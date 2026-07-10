@@ -72,6 +72,7 @@ function makeInitialState() {
     lives: 3,
     gameOver: false,
     won: false,
+    lifeLost: false,
   };
 }
 
@@ -131,7 +132,7 @@ function update() {
   if (state.ballY >= py) {
     state.lives--;
     if (state.lives <= 0) { state.gameOver = true; state.won = false; }
-    else resetBall();
+    else { resetBall(); state.lifeLost = true; }
     return;
   }
 
@@ -151,14 +152,16 @@ function update() {
   }
 }
 
-let prevGrid     = null;
+let prevGrid      = null;
 let prevColorGrid = null;
-let prevGameOver = null;
+let prevGameOver  = null;
+let prevLifeLost  = false;
 
 function resetRender() {
   prevGrid      = null;
   prevColorGrid = null;
   prevGameOver  = null;
+  prevLifeLost  = false;
 }
 
 function buildGrid() {
@@ -227,6 +230,18 @@ function renderGridDiff(grid, colorGrid) {
   prevColorGrid = colorGrid;
 }
 
+function renderLifeLostOverlay() {
+  const midRow = Math.floor(HEIGHT / 2) + GRID_ROW_OFFSET;
+  const title  = 'Vie perdue !';
+  const sub    = 'Espace pour relancer';
+  const titleCol = Math.floor((WIDTH - title.length) / 2) + GRID_COL_OFFSET;
+  const subCol   = Math.floor((WIDTH - sub.length)   / 2) + GRID_COL_OFFSET;
+  process.stdout.write(
+    at(midRow - 1, titleCol) + RED_COLOR  + title + RESET +
+    at(midRow + 1, subCol)   + TEXT_COLOR + sub   + RESET
+  );
+}
+
 function renderGameOverOverlay() {
   const midRow = Math.floor(HEIGHT / 2) + GRID_ROW_OFFSET;
   const color  = state.won ? GREEN_COLOR : RED_COLOR;
@@ -245,11 +260,17 @@ function renderGameOverOverlay() {
 function render() {
   const { grid, colorGrid } = buildGrid();
   renderHeader();
-  renderGridDiff(grid, colorGrid);
-  if (state.gameOver !== prevGameOver) {
+
+  if (state.lifeLost !== prevLifeLost || state.gameOver !== prevGameOver) {
+    prevGrid     = null;
+    prevLifeLost = state.lifeLost;
     prevGameOver = state.gameOver;
   }
-  if (state.gameOver) renderGameOverOverlay();
+
+  renderGridDiff(grid, colorGrid);
+
+  if (state.gameOver)      renderGameOverOverlay();
+  else if (state.lifeLost) renderLifeLostOverlay();
 }
 
 function handleKey(key) {
@@ -260,7 +281,7 @@ function handleKey(key) {
     setSpeed(SPEED_LEVELS[0].tickMs);
     return;
   }
-  if (key === ' ') { launchBall(); return; }
+  if (key === ' ') { state.lifeLost = false; launchBall(); return; }
   if (key === '\x1b[C' || key === 'd' || key === 'D') movePaddle(1);
   else if (key === '\x1b[D' || key === 'q' || key === 'Q') movePaddle(-1);
 }
