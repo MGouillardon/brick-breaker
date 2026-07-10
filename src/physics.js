@@ -81,7 +81,8 @@ function stepBall(state, ball) {
 
   if (by === py && ball.vy > 0 && bx >= state.paddleX - 1 && bx <= state.paddleX + pw) {
     const hitPos = (bx - state.paddleX) / pw;
-    ball.vx = hitPos < 0.5 ? -1 : 1;
+    const zone   = Math.min(Math.floor(hitPos * 4), 3);
+    ball.vx = [-2, -1, 1, 2][zone];
     ball.vy = -1;
     ball.y  = py - 1;
     ball.x  = Math.max(1, Math.min(WIDTH - 2, ball.x + (Math.random() < 0.5 ? 1 : -1)));

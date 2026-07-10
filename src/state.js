@@ -13,12 +13,12 @@ export const ballOnPaddleX = (state) =>
   Math.round(state.paddleX + effectivePaddleWidth(state) / 2);
 
 export function getSpeedLevels(level) {
-  const base = Math.max(42, 82 - (level - 1) * 8);
+  const base = Math.max(38, 65 - (level - 1) * 6);
   return [
     { frac: 0,    tickMs: base },
-    { frac: 0.25, tickMs: Math.max(40, base - 12) },
-    { frac: 0.50, tickMs: Math.max(38, base - 22) },
-    { frac: 0.75, tickMs: Math.max(36, base - 30) },
+    { frac: 0.25, tickMs: Math.max(36, base - 10) },
+    { frac: 0.50, tickMs: Math.max(34, base - 18) },
+    { frac: 0.75, tickMs: Math.max(32, base - 24) },
   ];
 }
 
