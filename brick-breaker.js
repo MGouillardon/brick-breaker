@@ -1,42 +1,50 @@
 #!/usr/bin/env node
 'use strict';
 
-const WIDTH = 40;
-const HEIGHT = 22;
-const PADDLE_WIDTH = 7;
-const BRICK_ROWS = 5;
-const BRICK_COLS = 10;
-const BRICK_WIDTH = Math.floor(WIDTH / BRICK_COLS);
-const TOTAL_BRICKS = BRICK_ROWS * BRICK_COLS;
-const POWERUP_CHANCE = 0.10;
-const BONUS_DURATION = 300;
+const WIDTH          = 40;
+const HEIGHT         = 22;
+const PADDLE_WIDTH   = 7;
+const BRICK_COLS     = 10;
+const BRICK_WIDTH    = Math.floor(WIDTH / BRICK_COLS);
+const MAX_LEVELS     = 5;
 const MAX_LIVES      = 5;
+const BONUS_DURATION   = 300;
+const SLOW_DURATION    = 400;
+const SHRINK_DURATION  = 250;
+const POWERUP_CHANCE   = 0.12;
+const STUCK_THRESHOLD  = 150;
 
-const SPEED_LEVELS = [
-  { threshold: 0,                               tickMs: 75 },
-  { threshold: Math.floor(TOTAL_BRICKS * 0.25), tickMs: 62 },
-  { threshold: Math.floor(TOTAL_BRICKS * 0.50), tickMs: 50 },
-  { threshold: Math.floor(TOTAL_BRICKS * 0.75), tickMs: 40 },
+const LEVEL_PATTERNS = [
+  [[1,1,1,1,1,1,1,1,1,1],[1,1,1,1,1,1,1,1,1,1],[1,1,1,1,1,1,1,1,1,1],[1,1,1,1,1,1,1,1,1,1],[1,1,1,1,1,1,1,1,1,1]],
+  [[2,2,2,2,2,2,2,2,2,2],[2,2,2,2,2,2,2,2,2,2],[1,1,1,1,1,1,1,1,1,1],[1,1,1,1,1,1,1,1,1,1],[1,1,1,1,1,1,1,1,1,1]],
+  [[3,0,3,0,3,0,3,0,3,0],[0,2,2,0,2,2,0,2,2,0],[1,1,2,1,1,2,1,1,2,1],[1,1,1,1,1,1,1,1,1,1],[1,1,1,1,1,1,1,1,1,1]],
+  [[0,0,0,3,3,3,3,0,0,0],[0,0,2,2,2,2,2,2,0,0],[0,2,2,2,2,2,2,2,2,0],[1,1,1,1,2,2,1,1,1,1],[1,1,1,1,1,1,1,1,1,1]],
+  [[3,3,3,3,3,3,3,3,3,3],[3,3,3,3,3,3,3,3,3,3],[2,2,2,2,2,2,2,2,2,2],[2,2,2,2,2,2,2,2,2,2],[1,1,1,1,1,1,1,1,1,1]],
 ];
 
-const bg  = (r, g, b) => `\x1b[48;2;${r};${g};${b}m`;
-const fg  = (r, g, b) => `\x1b[38;2;${r};${g};${b}m`;
+const bg = (r, g, b) => `\x1b[48;2;${r};${g};${b}m`;
+const fg = (r, g, b) => `\x1b[38;2;${r};${g};${b}m`;
 
 const BRICK_COLORS = [
-  bg(237, 135, 150),
-  bg(245, 169, 127),
-  bg(238, 212, 159),
-  bg(166, 218, 149),
-  bg(138, 173, 244),
+  [bg(237,135,150), bg(168, 82, 98), bg(100, 45, 58)],
+  [bg(245,169,127), bg(183,112, 75), bg(112, 62, 38)],
+  [bg(238,212,159), bg(178,152,103), bg(108, 88, 56)],
+  [bg(166,218,149), bg(106,155, 92), bg( 58, 92, 48)],
+  [bg(138,173,244), bg( 80,115,182), bg( 40, 62,110)],
 ];
-const PADDLE_COLOR      = bg(139, 213, 202);
-const PADDLE_WIDE_COLOR = bg(125, 196, 228);
-const BALL_COLOR        = fg(183, 189, 248);
-const OVERLAY_COLOR     = fg(110, 115, 141);
-const TEXT_COLOR        = fg(202, 211, 245);
-const RED_COLOR         = fg(237, 135, 150);
-const YELLOW_COLOR      = fg(238, 212, 159);
-const GREEN_COLOR       = fg(166, 218, 149);
+
+const PADDLE_COLOR        = bg(139, 213, 202);
+const PADDLE_WIDE_COLOR   = bg(125, 196, 228);
+const PADDLE_SHRINK_COLOR = bg(237, 135, 150);
+const BALL_COLOR          = fg(183, 189, 248);
+const OVERLAY_COLOR       = fg(110, 115, 141);
+const TEXT_COLOR          = fg(202, 211, 245);
+const RED_COLOR           = fg(237, 135, 150);
+const YELLOW_COLOR        = fg(238, 212, 159);
+const GREEN_COLOR         = fg(166, 218, 149);
+const BLUE_COLOR          = fg(138, 173, 244);
+const PEACH_COLOR         = fg(245, 169, 127);
+const MAUVE_COLOR         = fg(198, 160, 246);
 
 const RESET       = '\x1b[0m';
 const HIDE_CURSOR = '\x1b[?25l';
@@ -46,67 +54,112 @@ const GRID_ROW_OFFSET = 3;
 const GRID_COL_OFFSET = 2;
 const at = (row, col) => `\x1b[${row};${col}H`;
 
-function makeBricks() {
-  const bricks = [];
-  for (let r = 0; r < BRICK_ROWS; r++) {
+const POWERUP_STYLES = {
+  life:   { char: '+', color: RED_COLOR   },
+  wide:   { char: 'W', color: GREEN_COLOR },
+  multi:  { char: '*', color: MAUVE_COLOR },
+  slow:   { char: 'S', color: BLUE_COLOR  },
+  shrink: { char: '!', color: PEACH_COLOR },
+};
+
+const FLASH_MSGS = {
+  life:   '+Vie !',
+  wide:   'Large !',
+  multi:  'Multi !',
+  slow:   'Lent !',
+  shrink: 'Petit !',
+};
+
+function getSpeedLevels(level) {
+  const base = Math.max(42, 82 - (level - 1) * 8);
+  return [
+    { frac: 0,    tickMs: base },
+    { frac: 0.25, tickMs: Math.max(40, base - 12) },
+    { frac: 0.50, tickMs: Math.max(38, base - 22) },
+    { frac: 0.75, tickMs: Math.max(36, base - 30) },
+  ];
+}
+
+function pickPowerupType(level) {
+  const r = Math.random();
+  if (level === 1) {
+    if (r < 0.40) return 'life';
+    if (r < 0.68) return 'wide';
+    if (r < 0.86) return 'slow';
+    return 'multi';
+  }
+  if (level === 2) {
+    if (r < 0.25) return 'life';
+    if (r < 0.45) return 'wide';
+    if (r < 0.62) return 'multi';
+    if (r < 0.78) return 'slow';
+    return 'shrink';
+  }
+  if (r < 0.15) return 'life';
+  if (r < 0.30) return 'wide';
+  if (r < 0.46) return 'multi';
+  if (r < 0.62) return 'slow';
+  return 'shrink';
+}
+
+function makeBricks(level) {
+  const pattern = LEVEL_PATTERNS[(level - 1) % MAX_LEVELS];
+  const bricks  = [];
+  for (let r = 0; r < pattern.length; r++) {
     for (let c = 0; c < BRICK_COLS; c++) {
-      const rand    = Math.random();
-      const powerup = rand < POWERUP_CHANCE
-        ? (rand < POWERUP_CHANCE / 2 ? 'life' : 'wide')
-        : null;
+      const hits = pattern[r][c];
+      if (hits === 0) continue;
       bricks.push({
-        x: c * BRICK_WIDTH,
-        y: r + 2,
-        w: BRICK_WIDTH,
-        alive: true,
-        color: BRICK_COLORS[r % BRICK_COLORS.length],
-        powerup,
+        x: c * BRICK_WIDTH, y: r + 2, w: BRICK_WIDTH,
+        row: r, hits, maxHits: hits, alive: true,
+        powerup: Math.random() < POWERUP_CHANCE ? pickPowerupType(level) : null,
       });
     }
   }
   return bricks;
 }
 
-function makeInitialState() {
+function makeLevelState(level, carry = {}) {
   const paddleX = Math.floor((WIDTH - PADDLE_WIDTH) / 2);
   return {
     paddleX,
-    ballX: Math.round(paddleX + PADDLE_WIDTH / 2),
-    ballY: HEIGHT - 3,
-    ballVX: 0,
-    ballVY: 0,
     launched: false,
-    bricks: makeBricks(),
+    balls: [],
+    bricks: makeBricks(level),
     powerups: [],
-    paddleBonus: 0,
-    bonusTimer: 0,
-    score: 0,
-    lives: 3,
-    gameOver: false,
-    won: false,
+    wideTimer: 0, shrinkTimer: 0, slowTimer: 0, naturalTickMs: null,
+    score: carry.score ?? 0,
+    lives: carry.lives ?? 3,
+    level,
+    gameOver: false, won: false, levelComplete: false,
     lifeLost: false,
-    flashMsg: '',
-    flashTimer: 0,
+    flashMsg: '', flashTimer: 0, flashColor: GREEN_COLOR,
     stuckTicks: 0,
   };
 }
 
-let state = makeInitialState();
+const makeInitialState = () => makeLevelState(1);
+
+let state     = makeInitialState();
+let highScore = 0;
+
+const effectivePaddleWidth = () => Math.max(3,
+  PADDLE_WIDTH + (state.wideTimer > 0 ? 4 : 0) - (state.shrinkTimer > 0 ? 3 : 0)
+);
+
+const ballOnPaddleX = () => Math.round(state.paddleX + effectivePaddleWidth() / 2);
 
 function resetBall() {
-  state.ballX = Math.round(state.paddleX + PADDLE_WIDTH / 2);
-  state.ballY = HEIGHT - 3;
-  state.ballVX    = 0;
-  state.ballVY    = 0;
-  state.launched  = false;
+  state.balls      = [];
+  state.launched   = false;
   state.stuckTicks = 0;
 }
 
 function launchBall() {
   if (state.launched) return;
   state.launched = true;
-  state.ballVX = Math.random() < 0.5 ? -1 : 1;
-  state.ballVY = -1;
+  const x = Math.max(1, Math.min(WIDTH - 2, ballOnPaddleX() + (Math.random() < 0.5 ? 0 : 1)));
+  state.balls = [{ x, y: HEIGHT - 3, vx: Math.random() < 0.5 ? -1 : 1, vy: -1 }];
 }
 
 function movePaddle(dir) {
@@ -114,36 +167,109 @@ function movePaddle(dir) {
 }
 
 function applyPowerup(type) {
-  if (type === 'life') {
-    state.lives    = Math.min(MAX_LIVES, state.lives + 1);
-    state.flashMsg = '+♥ Vie !';
-  } else if (type === 'wide') {
-    state.paddleBonus = 4;
-    state.bonusTimer  = Math.min(state.bonusTimer + BONUS_DURATION, BONUS_DURATION * 2);
-    state.flashMsg    = '+ Large !';
-  }
+  state.flashMsg   = FLASH_MSGS[type] ?? type;
   state.flashTimer = 90;
+  state.flashColor = type === 'shrink' ? PEACH_COLOR : GREEN_COLOR;
+
+  if (type === 'life') {
+    state.lives = Math.min(MAX_LIVES, state.lives + 1);
+  } else if (type === 'wide') {
+    state.wideTimer = Math.min(state.wideTimer + BONUS_DURATION, BONUS_DURATION * 2);
+  } else if (type === 'multi') {
+    if (!state.launched) {
+      launchBall();
+    } else if (state.balls.length > 0) {
+      const ref = state.balls[0];
+      const nx  = Math.max(1, Math.min(WIDTH - 2, ref.x + (ref.vx > 0 ? -2 : 2)));
+      state.balls.push({ x: nx, y: Math.max(0, ref.y - 1), vx: -ref.vx, vy: -1 });
+    }
+  } else if (type === 'slow') {
+    if (state.slowTimer === 0) state.naturalTickMs = currentTickMs;
+    state.slowTimer = Math.min(state.slowTimer + SLOW_DURATION, SLOW_DURATION * 2);
+    setSpeed(Math.min(200, (state.naturalTickMs ?? currentTickMs) * 2));
+  } else if (type === 'shrink') {
+    state.shrinkTimer = SHRINK_DURATION;
+  }
 }
 
 function updateSpeed() {
-  const broken = state.bricks.filter((b) => !b.alive).length;
-  const level  = SPEED_LEVELS.filter((l) => broken >= l.threshold).pop();
-  if (level.tickMs !== currentTickMs) setSpeed(level.tickMs);
+  if (state.slowTimer > 0) return;
+  const total = state.bricks.length;
+  if (total === 0) return;
+  const frac   = state.bricks.filter(b => !b.alive).length / total;
+  const levels = getSpeedLevels(state.level);
+  const lvl    = levels.filter(l => frac >= l.frac).pop();
+  if (lvl.tickMs !== currentTickMs) setSpeed(lvl.tickMs);
+}
+
+function stepBall(ball) {
+  ball.x += ball.vx;
+  ball.y += ball.vy;
+
+  let hitWall = false;
+  if (ball.x <= 0)              { ball.x = 0;          ball.vx =  Math.abs(ball.vx); hitWall = true; }
+  else if (ball.x >= WIDTH - 1) { ball.x = WIDTH - 1;  ball.vx = -Math.abs(ball.vx); hitWall = true; }
+  if (ball.y <= 0)              { ball.y = 0;           ball.vy =  Math.abs(ball.vy); }
+
+  if (hitWall && state.stuckTicks > STUCK_THRESHOLD) {
+    ball.x = Math.max(1, Math.min(WIDTH - 2, ball.x + 1));
+  }
+
+  const bx = Math.round(ball.x);
+  const by = Math.round(ball.y);
+  const py = HEIGHT - 2;
+  const pw = effectivePaddleWidth();
+
+  if (by === py && ball.vy > 0 && bx >= state.paddleX - 1 && bx <= state.paddleX + pw) {
+    const hitPos = (bx - state.paddleX) / pw;
+    ball.vx = hitPos < 0.5 ? -1 : 1;
+    ball.vy = -1;
+    ball.y  = py - 1;
+    ball.x  = Math.max(1, Math.min(WIDTH - 2, ball.x + (Math.random() < 0.5 ? 1 : -1)));
+    state.stuckTicks = 0;
+    return 'paddle';
+  }
+
+  if (ball.y >= py) return 'dead';
+
+  for (const b of state.bricks) {
+    if (!b.alive) continue;
+    if (by === b.y && bx >= b.x && bx < b.x + b.w - 1) {
+      b.hits--;
+      state.score += 10 * state.level;
+      if (b.hits === 0) {
+        b.alive = false;
+        if (b.powerup) {
+          state.powerups.push({ x: b.x + Math.floor((b.w - 2) / 2), y: b.y, type: b.powerup });
+        }
+      }
+      ball.vy *= -1;
+      return 'brick';
+    }
+  }
+
+  return 'alive';
 }
 
 function update() {
-  if (state.gameOver) return;
+  if (state.gameOver || state.levelComplete) return;
 
-  if (state.bonusTimer > 0) {
-    state.bonusTimer--;
-    if (state.bonusTimer === 0) state.paddleBonus = 0;
+  if (state.wideTimer   > 0) state.wideTimer--;
+  if (state.shrinkTimer > 0) state.shrinkTimer--;
+  if (state.flashTimer  > 0) state.flashTimer--;
+  if (state.slowTimer   > 0) {
+    state.slowTimer--;
+    if (state.slowTimer === 0 && state.naturalTickMs !== null) {
+      setSpeed(state.naturalTickMs);
+      state.naturalTickMs = null;
+      updateSpeed();
+    }
   }
-  if (state.flashTimer > 0) state.flashTimer--;
 
   const py = HEIGHT - 2;
-  const pw = PADDLE_WIDTH + state.paddleBonus;
+  const pw = effectivePaddleWidth();
 
-  state.powerups = state.powerups.filter((p) => {
+  state.powerups = state.powerups.filter(p => {
     p.y++;
     if (p.y >= py) {
       if (p.x >= state.paddleX - 1 && p.x <= state.paddleX + pw) applyPowerup(p.type);
@@ -152,75 +278,54 @@ function update() {
     return true;
   });
 
-  if (!state.launched) {
-    state.ballX = Math.round(state.paddleX + PADDLE_WIDTH / 2);
-    return;
-  }
-
-  state.ballX += state.ballVX;
-  state.ballY += state.ballVY;
-
-  let hitWall = false;
-  if (state.ballX <= 0)              { state.ballX = 0;          state.ballVX =  Math.abs(state.ballVX); hitWall = true; }
-  else if (state.ballX >= WIDTH - 1) { state.ballX = WIDTH - 1;  state.ballVX = -Math.abs(state.ballVX); hitWall = true; }
-  if (state.ballY <= 0)              { state.ballY = 0;           state.ballVY =  Math.abs(state.ballVY); }
-
-  if (hitWall && state.stuckTicks > 150) {
-    state.ballX = Math.max(1, Math.min(WIDTH - 2, state.ballX + 1));
-  }
-
-  const bx = Math.round(state.ballX);
-  const by = Math.round(state.ballY);
-
-  if (by === py && state.ballVY > 0 && bx >= state.paddleX - 1 && bx <= state.paddleX + pw) {
-    const hitPos  = (bx - state.paddleX) / pw;
-    state.ballVX  = hitPos < 0.5 ? -1 : 1;
-    state.ballVY  = -1;
-    state.ballY   = py - 1;
-    state.ballX   = Math.max(1, Math.min(WIDTH - 2, state.ballX + (Math.random() < 0.5 ? 1 : -1)));
-    state.stuckTicks = 0;
-  }
-
-  if (state.ballY >= py) {
-    state.lives--;
-    if (state.lives <= 0) { state.gameOver = true; state.won = false; }
-    else { resetBall(); state.lifeLost = true; }
-    return;
-  }
+  if (!state.launched) return;
 
   let hitBrick = false;
-  for (const b of state.bricks) {
-    if (b.alive && by === b.y && bx >= b.x && bx < b.x + b.w - 1) {
-      b.alive = false;
-      state.score += 10;
-      state.ballVY *= -1;
-      state.stuckTicks = 0;
-      hitBrick = true;
-      if (b.powerup) {
-        state.powerups.push({ x: b.x + Math.floor((b.w - 2) / 2), y: b.y, type: b.powerup });
-      }
-      updateSpeed();
-      break;
-    }
-  }
-  if (!hitBrick) state.stuckTicks++;
+  state.balls = state.balls.filter(ball => {
+    const result = stepBall(ball);
+    if (result === 'brick') hitBrick = true;
+    return result !== 'dead';
+  });
 
-  if (state.bricks.every((b) => !b.alive)) {
-    state.gameOver = true;
-    state.won = true;
+  if (hitBrick) { state.stuckTicks = 0; updateSpeed(); }
+  else          { state.stuckTicks++; }
+
+  if (state.balls.length === 0) {
+    state.lives--;
+    if (state.lives <= 0) {
+      state.gameOver = true;
+      state.won      = false;
+      highScore = Math.max(highScore, state.score);
+    } else {
+      resetBall();
+      state.lifeLost = true;
+    }
+    return;
+  }
+
+  if (state.bricks.every(b => !b.alive)) {
+    if (state.level >= MAX_LEVELS) {
+      state.gameOver = true;
+      state.won      = true;
+      highScore = Math.max(highScore, state.score);
+    } else {
+      state.levelComplete = true;
+    }
   }
 }
 
-let prevGrid      = null;
-let prevColorGrid = null;
-let prevGameOver  = null;
-let prevLifeLost  = false;
+let prevGrid          = null;
+let prevColorGrid     = null;
+let prevGameOver      = null;
+let prevLifeLost      = false;
+let prevLevelComplete = false;
 
 function resetRender() {
-  prevGrid      = null;
-  prevColorGrid = null;
-  prevGameOver  = null;
-  prevLifeLost  = false;
+  prevGrid          = null;
+  prevColorGrid     = null;
+  prevGameOver      = null;
+  prevLifeLost      = false;
+  prevLevelComplete = false;
 }
 
 function buildGrid() {
@@ -229,15 +334,24 @@ function buildGrid() {
 
   for (const b of state.bricks) {
     if (!b.alive) continue;
+    const healthIdx = b.maxHits === 1 ? 0
+      : b.hits === b.maxHits ? 0
+      : b.hits === 1 ? 2
+      : 1;
+    const brickColor = BRICK_COLORS[b.row % 5][healthIdx];
+    const char       = healthIdx === 0 ? ' ' : healthIdx === 1 ? '▒' : '░';
+    const cellColor  = healthIdx > 0 ? brickColor + '\x1b[37m' : brickColor;
     for (let dx = 0; dx < b.w - 1; dx++) {
       const x = b.x + dx;
-      if (x >= 0 && x < WIDTH) { grid[b.y][x] = ' '; colorGrid[b.y][x] = b.color; }
+      if (x >= 0 && x < WIDTH) { grid[b.y][x] = char; colorGrid[b.y][x] = cellColor; }
     }
   }
 
-  const py    = HEIGHT - 2;
-  const pw    = PADDLE_WIDTH + state.paddleBonus;
-  const pcol  = state.paddleBonus > 0 ? PADDLE_WIDE_COLOR : PADDLE_COLOR;
+  const py  = HEIGHT - 2;
+  const pw  = effectivePaddleWidth();
+  const pcol = state.shrinkTimer > 0 ? PADDLE_SHRINK_COLOR
+             : state.wideTimer   > 0 ? PADDLE_WIDE_COLOR
+             : PADDLE_COLOR;
   for (let dx = 0; dx < pw; dx++) {
     const x = state.paddleX + dx;
     if (x >= 0 && x < WIDTH) { grid[py][x] = ' '; colorGrid[py][x] = pcol; }
@@ -245,16 +359,26 @@ function buildGrid() {
 
   for (const p of state.powerups) {
     if (p.y >= 0 && p.y < HEIGHT && p.x >= 0 && p.x < WIDTH) {
-      grid[p.y][p.x]      = p.type === 'life' ? '♥' : '+';
-      colorGrid[p.y][p.x] = p.type === 'life' ? RED_COLOR : GREEN_COLOR;
+      const s = POWERUP_STYLES[p.type];
+      grid[p.y][p.x]      = s.char;
+      colorGrid[p.y][p.x] = s.color;
     }
   }
 
-  const bx = Math.round(state.ballX);
-  const by = Math.round(state.ballY);
-  if (by >= 0 && by < HEIGHT && bx >= 0 && bx < WIDTH) {
-    grid[by][bx]      = '●';
-    colorGrid[by][bx] = BALL_COLOR;
+  if (!state.launched) {
+    const bx = ballOnPaddleX();
+    const by = HEIGHT - 3;
+    if (by >= 0 && by < HEIGHT && bx >= 0 && bx < WIDTH) {
+      grid[by][bx] = '●'; colorGrid[by][bx] = BALL_COLOR;
+    }
+  }
+
+  for (const ball of state.balls) {
+    const bx = Math.round(ball.x);
+    const by = Math.round(ball.y);
+    if (by >= 0 && by < HEIGHT && bx >= 0 && bx < WIDTH) {
+      grid[by][bx] = '●'; colorGrid[by][bx] = BALL_COLOR;
+    }
   }
 
   return { grid, colorGrid };
@@ -272,10 +396,12 @@ function initScreen() {
 }
 
 function renderHeader() {
-  const score = YELLOW_COLOR + String(state.score).padEnd(5) + RESET;
+  const score = YELLOW_COLOR + String(state.score).padEnd(6) + RESET;
+  const lvl   = MAUVE_COLOR  + `Niv.${state.level}/${MAX_LEVELS}` + RESET;
+  const hi    = OVERLAY_COLOR + `Hi:${String(highScore).padEnd(5)}` + RESET;
   process.stdout.write(
     at(1, 1) + TEXT_COLOR +
-    `Score: ${score}  Espace: lancer  ←/→: bouger  Ctrl+C: quitter` +
+    `Score: ${score} ${lvl}  ${hi}  Espace: lancer  Q/D: bouger` +
     RESET
   );
 }
@@ -283,15 +409,17 @@ function renderHeader() {
 function renderLives() {
   const col = WIDTH + 4;
   for (let i = 0; i < MAX_LIVES; i++) {
-    const row = GRID_ROW_OFFSET + i;
     process.stdout.write(
-      at(row, col) + (i < state.lives ? RED_COLOR + '♥' : OVERLAY_COLOR + '♡') + RESET
+      at(GRID_ROW_OFFSET + i, col) +
+      (i < state.lives ? RED_COLOR + '♥' : OVERLAY_COLOR + '♡') + RESET
     );
   }
   const flashRow = GRID_ROW_OFFSET + MAX_LIVES + 1;
-  const msg = state.flashTimer > 0 ? state.flashMsg : '        ';
-  const col2 = state.flashTimer > 0 ? GREEN_COLOR : '';
-  process.stdout.write(at(flashRow, col) + col2 + msg + RESET);
+  if (state.flashTimer > 0) {
+    process.stdout.write(at(flashRow, col) + state.flashColor + state.flashMsg.substring(0, 8) + RESET);
+  } else {
+    process.stdout.write(at(flashRow, col) + '        ');
+  }
 }
 
 function renderGridDiff(grid, colorGrid) {
@@ -310,27 +438,10 @@ function renderGridDiff(grid, colorGrid) {
   prevColorGrid = colorGrid;
 }
 
-function renderLifeLostOverlay() {
-  const midRow = Math.floor(HEIGHT / 2) + GRID_ROW_OFFSET;
-  const title  = 'Vie perdue !';
-  const sub    = 'Espace pour relancer';
+function renderOverlay(color, title, sub) {
+  const midRow   = Math.floor(HEIGHT / 2) + GRID_ROW_OFFSET;
   const titleCol = Math.floor((WIDTH - title.length) / 2) + GRID_COL_OFFSET;
   const subCol   = Math.floor((WIDTH - sub.length)   / 2) + GRID_COL_OFFSET;
-  process.stdout.write(
-    at(midRow - 1, titleCol) + RED_COLOR  + title + RESET +
-    at(midRow + 1, subCol)   + TEXT_COLOR + sub   + RESET
-  );
-}
-
-function renderGameOverOverlay() {
-  const midRow = Math.floor(HEIGHT / 2) + GRID_ROW_OFFSET;
-  const color  = state.won ? GREEN_COLOR : RED_COLOR;
-  const title  = state.won ? 'GAGNÉ !' : 'GAME OVER';
-  const sub    = 'R : Rejouer    Ctrl+C : Quitter';
-
-  const titleCol = Math.floor((WIDTH - title.length) / 2) + GRID_COL_OFFSET;
-  const subCol   = Math.floor((WIDTH - sub.length)   / 2) + GRID_COL_OFFSET;
-
   process.stdout.write(
     at(midRow - 1, titleCol) + color      + title + RESET +
     at(midRow + 1, subCol)   + TEXT_COLOR + sub   + RESET
@@ -341,28 +452,56 @@ function render() {
   const { grid, colorGrid } = buildGrid();
   renderHeader();
 
-  if (state.lifeLost !== prevLifeLost || state.gameOver !== prevGameOver) {
-    prevGrid     = null;
-    prevLifeLost = state.lifeLost;
-    prevGameOver = state.gameOver;
+  const changed = state.lifeLost !== prevLifeLost
+    || state.gameOver      !== prevGameOver
+    || state.levelComplete !== prevLevelComplete;
+  if (changed) {
+    prevGrid          = null;
+    prevLifeLost      = state.lifeLost;
+    prevGameOver      = state.gameOver;
+    prevLevelComplete = state.levelComplete;
   }
 
   renderGridDiff(grid, colorGrid);
   renderLives();
 
-  if (state.gameOver)      renderGameOverOverlay();
-  else if (state.lifeLost) renderLifeLostOverlay();
+  if (state.gameOver) {
+    renderOverlay(
+      state.won ? GREEN_COLOR : RED_COLOR,
+      state.won ? 'VICTOIRE !' : 'GAME OVER',
+      'R : Rejouer    Ctrl+C : Quitter'
+    );
+  } else if (state.levelComplete) {
+    renderOverlay(GREEN_COLOR, `Niveau ${state.level} termine !`, 'Espace pour continuer...');
+  } else if (state.lifeLost) {
+    renderOverlay(RED_COLOR, 'Vie perdue !', 'Espace pour relancer');
+  }
 }
 
 function handleKey(key) {
   if (key === '\x03') { cleanupAndExit(); return; }
+
   if (state.gameOver && (key === 'r' || key === 'R')) {
-    state = makeInitialState();
+    highScore = Math.max(highScore, state.score);
+    state     = makeInitialState();
     resetRender();
-    setSpeed(SPEED_LEVELS[0].tickMs);
+    setSpeed(getSpeedLevels(1)[0].tickMs);
     return;
   }
-  if (key === ' ') { state.lifeLost = false; launchBall(); return; }
+
+  if (state.levelComplete && key === ' ') {
+    state = makeLevelState(state.level + 1, { score: state.score, lives: state.lives });
+    resetRender();
+    setSpeed(getSpeedLevels(state.level)[0].tickMs);
+    return;
+  }
+
+  if (key === ' ') {
+    if (state.lifeLost) state.lifeLost = false;
+    launchBall();
+    return;
+  }
+
   if (key === '\x1b[C' || key === 'd' || key === 'D') movePaddle(1);
   else if (key === '\x1b[D' || key === 'q' || key === 'Q') movePaddle(-1);
 }
@@ -384,7 +523,7 @@ function setSpeed(tickMs) {
 function gameLoop() { update(); render(); }
 
 if (!process.stdin.isTTY) {
-  console.error('Ce jeu nécessite un vrai terminal (TTY). Lance-le avec `node brick-breaker.js`.');
+  console.error('Ce jeu necessite un vrai terminal (TTY). Lance-le avec `node brick-breaker.js`.');
   process.exit(1);
 }
 
@@ -394,7 +533,7 @@ process.stdin.resume();
 
 initScreen();
 
-let currentTickMs = SPEED_LEVELS[0].tickMs;
+let currentTickMs = getSpeedLevels(1)[0].tickMs;
 let loopHandle    = setInterval(gameLoop, currentTickMs);
 
 process.stdin.on('data', handleKey);
