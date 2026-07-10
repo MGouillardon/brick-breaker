@@ -8,12 +8,14 @@ const BRICK_ROWS = 5;
 const BRICK_COLS = 10;
 const BRICK_WIDTH = Math.floor(WIDTH / BRICK_COLS);
 const TOTAL_BRICKS = BRICK_ROWS * BRICK_COLS;
+const POWERUP_CHANCE = 0.10;
+const BONUS_DURATION = 300;
 
 const SPEED_LEVELS = [
-  { threshold: 0,                              tickMs: 60 },
-  { threshold: Math.floor(TOTAL_BRICKS * 0.25), tickMs: 50 },
-  { threshold: Math.floor(TOTAL_BRICKS * 0.50), tickMs: 40 },
-  { threshold: Math.floor(TOTAL_BRICKS * 0.75), tickMs: 30 },
+  { threshold: 0,                               tickMs: 75 },
+  { threshold: Math.floor(TOTAL_BRICKS * 0.25), tickMs: 62 },
+  { threshold: Math.floor(TOTAL_BRICKS * 0.50), tickMs: 50 },
+  { threshold: Math.floor(TOTAL_BRICKS * 0.75), tickMs: 40 },
 ];
 
 const bg  = (r, g, b) => `\x1b[48;2;${r};${g};${b}m`;
@@ -26,13 +28,14 @@ const BRICK_COLORS = [
   bg(166, 218, 149),
   bg(138, 173, 244),
 ];
-const PADDLE_COLOR  = bg(139, 213, 202);
-const BALL_COLOR    = fg(183, 189, 248);
-const OVERLAY_COLOR = fg(110, 115, 141);
-const TEXT_COLOR    = fg(202, 211, 245);
-const RED_COLOR     = fg(237, 135, 150);
-const YELLOW_COLOR  = fg(238, 212, 159);
-const GREEN_COLOR   = fg(166, 218, 149);
+const PADDLE_COLOR      = bg(139, 213, 202);
+const PADDLE_WIDE_COLOR = bg(125, 196, 228);
+const BALL_COLOR        = fg(183, 189, 248);
+const OVERLAY_COLOR     = fg(110, 115, 141);
+const TEXT_COLOR        = fg(202, 211, 245);
+const RED_COLOR         = fg(237, 135, 150);
+const YELLOW_COLOR      = fg(238, 212, 159);
+const GREEN_COLOR       = fg(166, 218, 149);
 
 const RESET       = '\x1b[0m';
 const HIDE_CURSOR = '\x1b[?25l';
@@ -46,12 +49,17 @@ function makeBricks() {
   const bricks = [];
   for (let r = 0; r < BRICK_ROWS; r++) {
     for (let c = 0; c < BRICK_COLS; c++) {
+      const rand    = Math.random();
+      const powerup = rand < POWERUP_CHANCE
+        ? (rand < POWERUP_CHANCE / 2 ? 'life' : 'wide')
+        : null;
       bricks.push({
         x: c * BRICK_WIDTH,
         y: r + 2,
         w: BRICK_WIDTH,
         alive: true,
         color: BRICK_COLORS[r % BRICK_COLORS.length],
+        powerup,
       });
     }
   }
@@ -68,6 +76,9 @@ function makeInitialState() {
     ballVY: 0,
     launched: false,
     bricks: makeBricks(),
+    powerups: [],
+    paddleBonus: 0,
+    bonusTimer: 0,
     score: 0,
     lives: 3,
     gameOver: false,
@@ -97,14 +108,40 @@ function movePaddle(dir) {
   state.paddleX = Math.max(0, Math.min(WIDTH - PADDLE_WIDTH, state.paddleX + dir * 3));
 }
 
+function applyPowerup(type) {
+  if (type === 'life') {
+    state.lives = Math.min(3, state.lives + 1);
+  } else if (type === 'wide') {
+    state.paddleBonus = 4;
+    state.bonusTimer  = BONUS_DURATION;
+  }
+}
+
 function updateSpeed() {
   const broken = state.bricks.filter((b) => !b.alive).length;
-  const level = SPEED_LEVELS.filter((l) => broken >= l.threshold).pop();
+  const level  = SPEED_LEVELS.filter((l) => broken >= l.threshold).pop();
   if (level.tickMs !== currentTickMs) setSpeed(level.tickMs);
 }
 
 function update() {
   if (state.gameOver) return;
+
+  if (state.bonusTimer > 0) {
+    state.bonusTimer--;
+    if (state.bonusTimer === 0) state.paddleBonus = 0;
+  }
+
+  const py = HEIGHT - 2;
+  const pw = PADDLE_WIDTH + state.paddleBonus;
+
+  state.powerups = state.powerups.filter((p) => {
+    p.y++;
+    if (p.y >= py) {
+      if (p.x >= state.paddleX - 1 && p.x <= state.paddleX + pw) applyPowerup(p.type);
+      return false;
+    }
+    return true;
+  });
 
   if (!state.launched) {
     state.ballX = Math.round(state.paddleX + PADDLE_WIDTH / 2);
@@ -120,13 +157,12 @@ function update() {
 
   const bx = Math.round(state.ballX);
   const by = Math.round(state.ballY);
-  const py = HEIGHT - 2;
 
-  if (by === py && state.ballVY > 0 && bx >= state.paddleX && bx < state.paddleX + PADDLE_WIDTH) {
-    const hitPos = (bx - state.paddleX) / PADDLE_WIDTH;
-    state.ballVX = hitPos < 0.5 ? -1 : 1;
-    state.ballVY = -1;
-    state.ballY = py - 1;
+  if (by === py && state.ballVY > 0 && bx >= state.paddleX - 1 && bx <= state.paddleX + pw) {
+    const hitPos  = (bx - state.paddleX) / pw;
+    state.ballVX  = hitPos < 0.5 ? -1 : 1;
+    state.ballVY  = -1;
+    state.ballY   = py - 1;
   }
 
   if (state.ballY >= py) {
@@ -141,6 +177,9 @@ function update() {
       b.alive = false;
       state.score += 10;
       state.ballVY *= -1;
+      if (b.powerup) {
+        state.powerups.push({ x: b.x + Math.floor((b.w - 2) / 2), y: b.y, type: b.powerup });
+      }
       updateSpeed();
       break;
     }
@@ -176,10 +215,19 @@ function buildGrid() {
     }
   }
 
-  const py = HEIGHT - 2;
-  for (let dx = 0; dx < PADDLE_WIDTH; dx++) {
+  const py    = HEIGHT - 2;
+  const pw    = PADDLE_WIDTH + state.paddleBonus;
+  const pcol  = state.paddleBonus > 0 ? PADDLE_WIDE_COLOR : PADDLE_COLOR;
+  for (let dx = 0; dx < pw; dx++) {
     const x = state.paddleX + dx;
-    if (x >= 0 && x < WIDTH) { grid[py][x] = ' '; colorGrid[py][x] = PADDLE_COLOR; }
+    if (x >= 0 && x < WIDTH) { grid[py][x] = ' '; colorGrid[py][x] = pcol; }
+  }
+
+  for (const p of state.powerups) {
+    if (p.y >= 0 && p.y < HEIGHT && p.x >= 0 && p.x < WIDTH) {
+      grid[p.y][p.x]      = p.type === 'life' ? '♥' : '+';
+      colorGrid[p.y][p.x] = p.type === 'life' ? RED_COLOR : GREEN_COLOR;
+    }
   }
 
   const bx = Math.round(state.ballX);
@@ -260,8 +308,8 @@ function renderGameOverOverlay() {
   const subCol   = Math.floor((WIDTH - sub.length)   / 2) + GRID_COL_OFFSET;
 
   process.stdout.write(
-    at(midRow - 1, titleCol) + color    + title + RESET +
-    at(midRow + 1, subCol)   + TEXT_COLOR + sub  + RESET
+    at(midRow - 1, titleCol) + color      + title + RESET +
+    at(midRow + 1, subCol)   + TEXT_COLOR + sub   + RESET
   );
 }
 
@@ -283,7 +331,7 @@ function render() {
 }
 
 function handleKey(key) {
-  if (key === '') { cleanupAndExit(); return; }
+  if (key === '') { cleanupAndExit(); return; }
   if (state.gameOver && (key === 'r' || key === 'R')) {
     state = makeInitialState();
     resetRender();
