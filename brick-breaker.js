@@ -87,6 +87,7 @@ function makeInitialState() {
     lifeLost: false,
     flashMsg: '',
     flashTimer: 0,
+    stuckTicks: 0,
   };
 }
 
@@ -95,9 +96,10 @@ let state = makeInitialState();
 function resetBall() {
   state.ballX = Math.round(state.paddleX + PADDLE_WIDTH / 2);
   state.ballY = HEIGHT - 3;
-  state.ballVX = 0;
-  state.ballVY = 0;
-  state.launched = false;
+  state.ballVX    = 0;
+  state.ballVY    = 0;
+  state.launched  = false;
+  state.stuckTicks = 0;
 }
 
 function launchBall() {
@@ -158,9 +160,14 @@ function update() {
   state.ballX += state.ballVX;
   state.ballY += state.ballVY;
 
-  if (state.ballX <= 0)              { state.ballX = 0;          state.ballVX =  Math.abs(state.ballVX); }
-  else if (state.ballX >= WIDTH - 1) { state.ballX = WIDTH - 1;  state.ballVX = -Math.abs(state.ballVX); }
+  let hitWall = false;
+  if (state.ballX <= 0)              { state.ballX = 0;          state.ballVX =  Math.abs(state.ballVX); hitWall = true; }
+  else if (state.ballX >= WIDTH - 1) { state.ballX = WIDTH - 1;  state.ballVX = -Math.abs(state.ballVX); hitWall = true; }
   if (state.ballY <= 0)              { state.ballY = 0;           state.ballVY =  Math.abs(state.ballVY); }
+
+  if (hitWall && state.stuckTicks > 150) {
+    state.ballX = Math.max(1, Math.min(WIDTH - 2, state.ballX + 1));
+  }
 
   const bx = Math.round(state.ballX);
   const by = Math.round(state.ballY);
@@ -170,6 +177,8 @@ function update() {
     state.ballVX  = hitPos < 0.5 ? -1 : 1;
     state.ballVY  = -1;
     state.ballY   = py - 1;
+    state.ballX   = Math.max(1, Math.min(WIDTH - 2, state.ballX + (Math.random() < 0.5 ? 1 : -1)));
+    state.stuckTicks = 0;
   }
 
   if (state.ballY >= py) {
@@ -179,11 +188,14 @@ function update() {
     return;
   }
 
+  let hitBrick = false;
   for (const b of state.bricks) {
     if (b.alive && by === b.y && bx >= b.x && bx < b.x + b.w - 1) {
       b.alive = false;
       state.score += 10;
       state.ballVY *= -1;
+      state.stuckTicks = 0;
+      hitBrick = true;
       if (b.powerup) {
         state.powerups.push({ x: b.x + Math.floor((b.w - 2) / 2), y: b.y, type: b.powerup });
       }
@@ -191,6 +203,7 @@ function update() {
       break;
     }
   }
+  if (!hitBrick) state.stuckTicks++;
 
   if (state.bricks.every((b) => !b.alive)) {
     state.gameOver = true;
