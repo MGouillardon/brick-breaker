@@ -204,14 +204,22 @@ function initScreen() {
 }
 
 function renderHeader() {
-  const hearts = RED_COLOR + '♥'.repeat(Math.max(state.lives, 0)) + RESET +
-                 ' '.repeat(Math.max(3 - state.lives, 0));
-  const score  = YELLOW_COLOR + String(state.score).padEnd(5) + RESET;
+  const score = YELLOW_COLOR + String(state.score).padEnd(5) + RESET;
   process.stdout.write(
     at(1, 1) + TEXT_COLOR +
-    `Score: ${score} Vies: ${hearts}  Espace: lancer  ←/→: bouger  Ctrl+C: quitter` +
+    `Score: ${score}  Espace: lancer  ←/→: bouger  Ctrl+C: quitter` +
     RESET
   );
+}
+
+function renderLives() {
+  const col = WIDTH + 4;
+  for (let i = 0; i < 3; i++) {
+    const row = GRID_ROW_OFFSET + i;
+    process.stdout.write(
+      at(row, col) + (i < state.lives ? RED_COLOR + '♥' : OVERLAY_COLOR + '♡') + RESET
+    );
+  }
 }
 
 function renderGridDiff(grid, colorGrid) {
@@ -268,6 +276,7 @@ function render() {
   }
 
   renderGridDiff(grid, colorGrid);
+  renderLives();
 
   if (state.gameOver)      renderGameOverOverlay();
   else if (state.lifeLost) renderLifeLostOverlay();
