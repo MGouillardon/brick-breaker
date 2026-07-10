@@ -10,6 +10,7 @@ const BRICK_WIDTH = Math.floor(WIDTH / BRICK_COLS);
 const TOTAL_BRICKS = BRICK_ROWS * BRICK_COLS;
 const POWERUP_CHANCE = 0.10;
 const BONUS_DURATION = 300;
+const MAX_LIVES      = 5;
 
 const SPEED_LEVELS = [
   { threshold: 0,                               tickMs: 75 },
@@ -331,7 +332,7 @@ function render() {
 }
 
 function handleKey(key) {
-  if (key === '') { cleanupAndExit(); return; }
+  if (key === '\x03') { cleanupAndExit(); return; }
   if (state.gameOver && (key === 'r' || key === 'R')) {
     state = makeInitialState();
     resetRender();
