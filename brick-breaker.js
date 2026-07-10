@@ -14,6 +14,10 @@ const RESET = '\x1b[0m';
 const HIDE_CURSOR = '\x1b[?25l';
 const SHOW_CURSOR = '\x1b[?25h';
 
+const GRID_ROW_OFFSET = 3;
+const GRID_COL_OFFSET = 2;
+const at = (row, col) => `\x1b[${row};${col}H`;
+
 function makeBricks() {
   const bricks = [];
   for (let r = 0; r < BRICK_ROWS; r++) {
@@ -116,7 +120,17 @@ function update() {
   }
 }
 
-function render() {
+let prevGrid = null;
+let prevColorGrid = null;
+let prevGameOver = null;
+
+function resetRender() {
+  prevGrid = null;
+  prevColorGrid = null;
+  prevGameOver = null;
+}
+
+function buildGrid() {
   const grid = Array.from({ length: HEIGHT }, () => new Array(WIDTH).fill(' '));
   const colorGrid = Array.from({ length: HEIGHT }, () => new Array(WIDTH).fill(null));
 
@@ -138,30 +152,69 @@ function render() {
   const by = Math.round(state.ballY);
   if (by >= 0 && by < HEIGHT && bx >= 0 && bx < WIDTH) grid[by][bx] = 'O';
 
-  const header = `Score: ${state.score}   Vies: ${'♥'.repeat(Math.max(state.lives, 0))}  Espace: lancer  ←/→: bouger  Ctrl+C: quitter\n`;
-  const body = grid
-    .map((row, y) => {
-      const line = row.map((ch, x) => (colorGrid[y][x] ? `${colorGrid[y][x]}${ch}${RESET}` : ch)).join('');
-      return `│${line}│`;
-    })
-    .join('\n');
-  const footer = state.gameOver
-    ? (state.won ? '\n🎉 GAGNÉ ! Toutes les briques détruites. 🎉\n' : '\n💥 GAME OVER 💥\n') +
-      'Appuie sur Ctrl+C pour quitter, ou R pour rejouer.\n'
-    : '';
+  return { grid, colorGrid };
+}
 
+function initScreen() {
+  process.stdout.write('\x1b[2J' + HIDE_CURSOR);
+  process.stdout.write(at(2, 1) + '┌' + '─'.repeat(WIDTH) + '┐');
+  process.stdout.write(at(HEIGHT + 3, 1) + '└' + '─'.repeat(WIDTH) + '┘');
+  let borders = '';
+  for (let y = 0; y < HEIGHT; y++) {
+    borders += at(y + GRID_ROW_OFFSET, 1) + '│' + at(y + GRID_ROW_OFFSET, WIDTH + 2) + '│';
+  }
+  process.stdout.write(borders);
+}
+
+function renderHeader() {
+  const hearts = '♥'.repeat(Math.max(state.lives, 0));
   process.stdout.write(
-    '\x1b[H' + header +
-    '┌' + '─'.repeat(WIDTH) + '┐\n' +
-    body + '\n' +
-    '└' + '─'.repeat(WIDTH) + '┘\n' +
-    footer
+    at(1, 1) +
+    `Score: ${String(state.score).padEnd(5)} Vies: ${hearts.padEnd(3)}  Espace: lancer  ←/→: bouger  Ctrl+C: quitter`
   );
+}
+
+function renderGridDiff(grid, colorGrid) {
+  let out = '';
+  for (let y = 0; y < HEIGHT; y++) {
+    for (let x = 0; x < WIDTH; x++) {
+      if (!prevGrid || grid[y][x] !== prevGrid[y][x] || colorGrid[y][x] !== prevColorGrid[y][x]) {
+        const ch = grid[y][x];
+        const color = colorGrid[y][x];
+        out += at(y + GRID_ROW_OFFSET, x + GRID_COL_OFFSET) + (color ? `${color}${ch}${RESET}` : ch);
+      }
+    }
+  }
+  if (out) process.stdout.write(out);
+  prevGrid = grid;
+  prevColorGrid = colorGrid;
+}
+
+function renderFooter() {
+  const row = HEIGHT + 4;
+  const msg = state.won ? '🎉 GAGNÉ ! Toutes les briques détruites. 🎉' : '💥 GAME OVER 💥';
+  process.stdout.write(at(row, 1) + msg + at(row + 1, 1) + 'Appuie sur Ctrl+C pour quitter, ou R pour rejouer.');
+}
+
+function clearFooter() {
+  const row = HEIGHT + 4;
+  const blank = ' '.repeat(WIDTH + 2);
+  process.stdout.write(at(row, 1) + blank + at(row + 1, 1) + blank);
+}
+
+function render() {
+  const { grid, colorGrid } = buildGrid();
+  renderHeader();
+  renderGridDiff(grid, colorGrid);
+  if (state.gameOver !== prevGameOver) {
+    state.gameOver ? renderFooter() : clearFooter();
+    prevGameOver = state.gameOver;
+  }
 }
 
 function handleKey(key) {
   if (key === '') { cleanupAndExit(); return; }
-  if (state.gameOver && (key === 'r' || key === 'R')) { state = makeInitialState(); return; }
+  if (state.gameOver && (key === 'r' || key === 'R')) { state = makeInitialState(); resetRender(); return; }
   if (key === ' ') { launchBall(); return; }
   if (key === '\x1b[C' || key === 'd' || key === 'D') movePaddle(1);
   else if (key === '\x1b[D' || key === 'q' || key === 'Q') movePaddle(-1);
@@ -183,7 +236,8 @@ if (!process.stdin.isTTY) {
 process.stdin.setEncoding('utf8');
 process.stdin.setRawMode(true);
 process.stdin.resume();
-process.stdout.write('\x1b[2J' + HIDE_CURSOR);
+
+initScreen();
 
 const loopHandle = setInterval(() => { update(); render(); }, TICK_MS);
 
