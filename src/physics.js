@@ -74,13 +74,11 @@ function stepBall(state, ball) {
   const py = HEIGHT - 2;
   const pw = effectivePaddleWidth(state);
 
-  if (by === py && ball.vy > 0 && bx >= state.paddleX - 1 && bx <= state.paddleX + pw) {
-    const hitPos = (bx - state.paddleX) / pw;
-    const zone   = Math.min(Math.floor(hitPos * 4), 3);
+  if (by === py && ball.vy > 0 && bx >= state.paddleX && bx < state.paddleX + pw) {
+    const zone = Math.min(Math.floor((bx - state.paddleX) / pw * 4), 3);
     ball.vx = [-2, -1, 1, 2][zone];
     ball.vy = -1;
     ball.y  = py - 1;
-    ball.x  = Math.max(1, Math.min(WIDTH - 2, ball.x + (Math.random() < 0.5 ? 1 : -1)));
     state.stuckTicks = 0;
     return 'paddle';
   }
