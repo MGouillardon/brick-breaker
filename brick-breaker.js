@@ -9,7 +9,24 @@ const BRICK_COLS = 10;
 const BRICK_WIDTH = Math.floor(WIDTH / BRICK_COLS);
 const TICK_MS = 60;
 
-const BRICK_COLORS = ['\x1b[41m', '\x1b[43m', '\x1b[42m', '\x1b[44m', '\x1b[45m'];
+const bg  = (r, g, b) => `\x1b[48;2;${r};${g};${b}m`;
+const fg  = (r, g, b) => `\x1b[38;2;${r};${g};${b}m`;
+
+const BRICK_COLORS = [
+  bg(237, 135, 150), // Red
+  bg(245, 169, 127), // Peach
+  bg(238, 212, 159), // Yellow
+  bg(166, 218, 149), // Green
+  bg(138, 173, 244), // Blue
+];
+const PADDLE_COLOR  = bg(139, 213, 202); // Teal
+const BALL_COLOR    = fg(183, 189, 248); // Lavender
+const OVERLAY_COLOR = fg(110, 115, 141); // Overlay0
+const TEXT_COLOR    = fg(202, 211, 245); // Text
+const RED_COLOR     = fg(237, 135, 150); // Red fg
+const YELLOW_COLOR  = fg(238, 212, 159); // Yellow fg
+const GREEN_COLOR   = fg(166, 218, 149); // Green fg
+
 const RESET = '\x1b[0m';
 const HIDE_CURSOR = '\x1b[?25l';
 const SHOW_CURSOR = '\x1b[?25h';
@@ -138,39 +155,44 @@ function buildGrid() {
     if (!b.alive) continue;
     for (let dx = 0; dx < b.w - 1; dx++) {
       const x = b.x + dx;
-      if (x >= 0 && x < WIDTH) { grid[b.y][x] = '█'; colorGrid[b.y][x] = b.color; }
+      if (x >= 0 && x < WIDTH) { grid[b.y][x] = ' '; colorGrid[b.y][x] = b.color; }
     }
   }
 
   const py = HEIGHT - 2;
   for (let dx = 0; dx < PADDLE_WIDTH; dx++) {
     const x = state.paddleX + dx;
-    if (x >= 0 && x < WIDTH) grid[py][x] = '=';
+    if (x >= 0 && x < WIDTH) { grid[py][x] = ' '; colorGrid[py][x] = PADDLE_COLOR; }
   }
 
   const bx = Math.round(state.ballX);
   const by = Math.round(state.ballY);
-  if (by >= 0 && by < HEIGHT && bx >= 0 && bx < WIDTH) grid[by][bx] = 'O';
+  if (by >= 0 && by < HEIGHT && bx >= 0 && bx < WIDTH) {
+    grid[by][bx] = '●';
+    colorGrid[by][bx] = BALL_COLOR;
+  }
 
   return { grid, colorGrid };
 }
 
 function initScreen() {
-  process.stdout.write('\x1b[2J' + HIDE_CURSOR);
+  process.stdout.write('\x1b[2J' + HIDE_CURSOR + OVERLAY_COLOR);
   process.stdout.write(at(2, 1) + '┌' + '─'.repeat(WIDTH) + '┐');
   process.stdout.write(at(HEIGHT + 3, 1) + '└' + '─'.repeat(WIDTH) + '┘');
   let borders = '';
   for (let y = 0; y < HEIGHT; y++) {
     borders += at(y + GRID_ROW_OFFSET, 1) + '│' + at(y + GRID_ROW_OFFSET, WIDTH + 2) + '│';
   }
-  process.stdout.write(borders);
+  process.stdout.write(borders + RESET);
 }
 
 function renderHeader() {
-  const hearts = '♥'.repeat(Math.max(state.lives, 0));
+  const hearts = RED_COLOR + '♥'.repeat(Math.max(state.lives, 0)) + RESET + ' '.repeat(Math.max(3 - state.lives, 0));
+  const score  = YELLOW_COLOR + String(state.score).padEnd(5) + RESET;
   process.stdout.write(
-    at(1, 1) +
-    `Score: ${String(state.score).padEnd(5)} Vies: ${hearts.padEnd(3)}  Espace: lancer  ←/→: bouger  Ctrl+C: quitter`
+    at(1, 1) + TEXT_COLOR +
+    `Score: ${score} Vies: ${hearts}  Espace: lancer  ←/→: bouger  Ctrl+C: quitter` +
+    RESET
   );
 }
 
@@ -192,8 +214,13 @@ function renderGridDiff(grid, colorGrid) {
 
 function renderFooter() {
   const row = HEIGHT + 4;
-  const msg = state.won ? '🎉 GAGNÉ ! Toutes les briques détruites. 🎉' : '💥 GAME OVER 💥';
-  process.stdout.write(at(row, 1) + msg + at(row + 1, 1) + 'Appuie sur Ctrl+C pour quitter, ou R pour rejouer.');
+  const msg = state.won
+    ? GREEN_COLOR  + '🎉 GAGNÉ ! Toutes les briques détruites. 🎉' + RESET
+    : RED_COLOR    + '💥 GAME OVER 💥' + RESET;
+  process.stdout.write(
+    at(row, 1) + msg +
+    at(row + 1, 1) + TEXT_COLOR + 'Appuie sur Ctrl+C pour quitter, ou R pour rejouer.' + RESET
+  );
 }
 
 function clearFooter() {
