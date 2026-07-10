@@ -85,6 +85,8 @@ function makeInitialState() {
     gameOver: false,
     won: false,
     lifeLost: false,
+    flashMsg: '',
+    flashTimer: 0,
   };
 }
 
@@ -111,11 +113,14 @@ function movePaddle(dir) {
 
 function applyPowerup(type) {
   if (type === 'life') {
-    state.lives = Math.min(3, state.lives + 1);
+    state.lives    = Math.min(MAX_LIVES, state.lives + 1);
+    state.flashMsg = '+♥ Vie !';
   } else if (type === 'wide') {
     state.paddleBonus = 4;
-    state.bonusTimer  = BONUS_DURATION;
+    state.bonusTimer  = Math.min(state.bonusTimer + BONUS_DURATION, BONUS_DURATION * 2);
+    state.flashMsg    = '+ Large !';
   }
+  state.flashTimer = 90;
 }
 
 function updateSpeed() {
@@ -131,6 +136,7 @@ function update() {
     state.bonusTimer--;
     if (state.bonusTimer === 0) state.paddleBonus = 0;
   }
+  if (state.flashTimer > 0) state.flashTimer--;
 
   const py = HEIGHT - 2;
   const pw = PADDLE_WIDTH + state.paddleBonus;
@@ -263,12 +269,16 @@ function renderHeader() {
 
 function renderLives() {
   const col = WIDTH + 4;
-  for (let i = 0; i < 3; i++) {
+  for (let i = 0; i < MAX_LIVES; i++) {
     const row = GRID_ROW_OFFSET + i;
     process.stdout.write(
       at(row, col) + (i < state.lives ? RED_COLOR + '♥' : OVERLAY_COLOR + '♡') + RESET
     );
   }
+  const flashRow = GRID_ROW_OFFSET + MAX_LIVES + 1;
+  const msg = state.flashTimer > 0 ? state.flashMsg : '        ';
+  const col2 = state.flashTimer > 0 ? GREEN_COLOR : '';
+  process.stdout.write(at(flashRow, col) + col2 + msg + RESET);
 }
 
 function renderGridDiff(grid, colorGrid) {
