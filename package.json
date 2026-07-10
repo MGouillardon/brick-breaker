@@ -1,0 +1,12 @@
+{
+  "name": "brick-breaker",
+  "version": "1.0.0",
+  "description": "Casse-briques en terminal, zéro dépendance, Node.js pur.",
+  "scripts": {
+    "start": "node brick-breaker.js"
+  },
+  "engines": {
+    "node": ">=14"
+  },
+  "license": "MIT"
+}
