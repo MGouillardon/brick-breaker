@@ -128,7 +128,7 @@ function update() {
     state.ballY = py - 1;
   }
 
-  if (state.ballY >= HEIGHT - 1) {
+  if (state.ballY >= py) {
     state.lives--;
     if (state.lives <= 0) { state.gameOver = true; state.won = false; }
     else resetBall();
@@ -253,7 +253,7 @@ function render() {
 }
 
 function handleKey(key) {
-  if (key === '') { cleanupAndExit(); return; }
+  if (key === '') { cleanupAndExit(); return; }
   if (state.gameOver && (key === 'r' || key === 'R')) {
     state = makeInitialState();
     resetRender();
@@ -296,4 +296,5 @@ let currentTickMs = SPEED_LEVELS[0].tickMs;
 let loopHandle    = setInterval(gameLoop, currentTickMs);
 
 process.stdin.on('data', handleKey);
+process.on('SIGINT', cleanupAndExit);
 process.on('exit', () => process.stdout.write(SHOW_CURSOR));
